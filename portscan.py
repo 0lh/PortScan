@@ -5,9 +5,10 @@ import nmap
 import threading
 import os
 from queue import Queue
+from config import *
+import csv
 
 lock = threading.Lock()
-rate = 1200
 
 ip_port_dict = {}
 
@@ -26,7 +27,7 @@ class PortScan(threading.Thread):
             self.nmap_scan(ip, open_port_list)
 
     def masscan_scan(self, ip):
-        command = f'sudo masscan {ip} --top-ports 100 --rate={rate} --wait 5'
+        command = f'sudo masscan {ip} -p{masscan_port} --rate={masscan_rate} --wait 5'
         lock.acquire()
         click.secho('\n' + '=>' * 50, fg='red')
         click.secho(f'[*] 当前command: {command}', fg='red')
@@ -42,12 +43,11 @@ class PortScan(threading.Thread):
             if 'Discovered open port' in line:
                 open_port = re.findall(r'port (\d{1,5})/tcp', line)
                 if ip_port_dict.get(ip):
-                    if len(ip_port_dict.get(ip)) < 30:
+                    if len(ip_port_dict.get(ip)) < 50:
                         click.secho(f'{ip} => 当前端口个数{len(ip_port_dict.get(ip))}', fg='red')
                         ip_port_dict[ip].append(open_port[0])
-
                     else:
-                        click.secho(f'\n{ip} \n疑似有WAF,存活端口大于个', fg='red')
+                        click.secho(f'\n{ip} \n疑似有WAF,存活端口大于50个', fg='red')
                         del ip_port_dict[ip]
                         os.kill(child.pid, 9)
                 else:
@@ -72,7 +72,7 @@ class PortScan(threading.Thread):
             lock.acquire()
             click.secho(f'[*] 开始nmap扫描 ip: {ip} => 端口: {open_ports}', fg='red')
             lock.release()
-            ret = np.scan(ip, f'{open_ports}', arguments="-sV -sT -Pn --version-all --open")
+            ret = np.scan(ip, f'{open_ports}', arguments=nmap_arguments)
             try:
                 output_item = ret['scan'][ip]['tcp']
             except Exception:
@@ -87,37 +87,6 @@ class PortScan(threading.Thread):
                         f.write(save_item + '\n')
 
 
-import csv
-
-
-def gen_one_csv(csv_filename, port_list):
-    test_list = []
-    for site_status_info in port_list:
-        test_list.append(site_status_info)
-
-    headers = ['url', 'status code', 'title']
-    with open('{}.csv'.format(csv_filename), 'w', newline='', encoding='utf-8')as f:
-        f_csv = csv.writer(f)
-        f_csv.writerow(headers)
-        f_csv.writerows(test_list)
-
-
-def save_result_to_csv():
-    result_list = []
-
-    #         result_list.append(f'{ip}:{port}')
-    # print('result_list: ', result_list)
-
-    header = ['ip_port']
-    with open('ip_port.csv', 'w', newline='', encoding='utf-8')as f:
-        f_csv = csv.writer(f)
-        # f_csv.writerow(header)
-        for ip, port_list in ip_port_dict.items():
-            for port in port_list:
-                f_csv.writerow([f'{ip}:{port}'])
-    # todo 排序写入 or 排序写出
-
-
 def main():
     with open('ips.txt', 'r', encoding='utf-8') as f:
         for ip in f:
@@ -130,10 +99,8 @@ def main():
 
     for task in tasks:
         task.join()
-
-    # save_result_to_csv()
+    print('ip_port_dict => ', ip_port_dict)
 
 
 if __name__ == '__main__':
     main()
-    print('ip_port_dict => ', ip_port_dict)
